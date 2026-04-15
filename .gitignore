@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Node
+node_modules/
+
+# 下载产物（不提交到仓库）
+douyin_downloads_*/
