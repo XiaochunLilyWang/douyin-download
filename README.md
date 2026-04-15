@@ -1,31 +1,75 @@
 # 抖音链接批量下载
 
-从本地 Excel 文件中筛选「抖音 APP」来源的链接，自动判断是图集还是视频并下载到本地。
+从本地 **Excel 或 JSON 文件**中筛选「抖音 APP」来源的链接，自动判断是图集还是视频并下载到本地。
+
+---
+
+## 在 Claude Code 中使用
+
+本工具附带一个 Claude Code 技能文件 `douyin-download.md`，安装后可在 Claude Code 中通过斜杠命令一键调用，无需手动敲命令行参数。
+
+### 安装方式
+
+**项目级（推荐）**：将技能文件放入当前项目的命令目录，仅对该项目生效：
+
+```bash
+# 在你的项目根目录下执行
+mkdir -p .claude/commands
+cp douyin-download.md .claude/commands/douyin-download.md
+```
+
+**用户级**：将技能文件放入用户全局目录，对所有项目生效：
+
+```bash
+# Windows
+copy douyin-download.md "%USERPROFILE%\.claude\commands\douyin-download.md"
+
+# macOS / Linux
+cp douyin-download.md ~/.claude/commands/douyin-download.md
+```
+
+### 使用方式
+
+安装后，在 Claude Code 中输入：
+
+```
+/douyin-download
+```
+
+Claude 会自动引导你完成整个流程：
+1. 询问输入文件路径（Excel 或 JSON，及可选的输出目录）
+2. 确认参数并运行脚本
+3. 实时汇报进度（每隔约 1 分钟）
+4. 下载完成后展示图集/视频/无效的汇总统计
 
 ---
 
 ## 使用方法
 
-Excel 文件可以放在电脑上的任意位置，直接把路径传给脚本即可，不需要修改脚本内容。
+输入文件（Excel 或 JSON）可以放在电脑上的任意位置，直接把路径传给脚本即可，不需要修改脚本内容。
+脚本根据文件扩展名（`.xlsx` / `.json`）自动切换读取方式。
 
 ```bash
-# 基本用法（输出目录自动创建在 Excel 同级目录下）
-python batch-download-douyin.py "<Excel路径>"
+# 基本用法（输出目录自动创建在输入文件同级目录下）
+python batch-download-douyin.py "<输入文件路径>"
 
 # 同时指定输出目录
-python batch-download-douyin.py "<Excel路径>" "<输出目录>"
+python batch-download-douyin.py "<输入文件路径>" "<输出目录>"
 ```
 
 **示例：**
 ```bash
-# Excel 在桌面
+# Excel 输入
 python batch-download-douyin.py "C:/Users/张三/Desktop/yuqing_data.xlsx"
 
-# Excel 在任意目录，输出到指定位置
+# JSON 输入（如 yuqing-sync-skill 导出的 JSON）
+python batch-download-douyin.py "D:/data/yuqing_20260415.json"
+
+# 指定输出目录
 python batch-download-douyin.py "D:/data/yuqing_0415.xlsx" "D:/downloads/douyin"
 ```
 
-**输出目录默认规则**：不指定时，在 Excel 同级目录下自动创建 `douyin_downloads_<文件名>/`。
+**输出目录默认规则**：不指定时，在输入文件同级目录下自动创建 `douyin_downloads_<文件名>/`。
 
 ---
 
@@ -59,7 +103,7 @@ python batch-download-douyin.py "D:/data/yuqing_0415.xlsx" "D:/downloads/douyin"
 ```
 
 **子文件夹命名规则**：使用抖音视频 ID（从 URL 中提取）。
-当 Excel 的 case ID 列填写后，可通过 `download_results.xlsx` 中的对应关系查找。
+当输入文件的 case ID 列填写后，可通过 `download_results.xlsx` 中的对应关系查找。
 
 ---
 
@@ -69,11 +113,11 @@ python batch-download-douyin.py "D:/data/yuqing_0415.xlsx" "D:/downloads/douyin"
 
 | 列 | 说明 |
 |----|------|
-| 序号 | Excel 中的行顺序 |
-| case_id | 原 Excel 的 case ID（当前为空） |
+| 序号 | 输入文件中的行顺序 |
+| case_id | 原始 case ID |
 | 视频ID（文件夹名） | 抖音视频 ID，即本地子文件夹名 |
 | 原文URL | 原始链接 |
-| 标题 | 原 Excel 标题 |
+| 标题 | 原始标题 |
 | 类型 | 图集 / 视频 / 无效（颜色高亮） |
 | 文件路径 | 本地下载路径 |
 | 备注 | 图片数量 / 视频大小 / 失败原因 |
@@ -106,7 +150,9 @@ pip install openpyxl requests
 
 ---
 
-## Excel 要求
+## 输入文件要求
+
+### Excel（`.xlsx`）
 
 输入文件需包含以下列名（表头在第 1 行）：
 
@@ -119,3 +165,16 @@ pip install openpyxl requests
 | 标题 | — | 可为空，写入结果表格 |
 
 > 列名必须一致，列的顺序无要求。运行后会在原 Excel 末尾**自动新增**「媒体类型」列（图集 / 视频）。
+
+### JSON（`.json`）
+
+JSON 格式为对象数组，每条记录需包含以下字段：
+
+| 字段名 | 必须 | 说明 |
+|--------|------|------|
+| 来源渠道 | ✅ | 脚本筛选值为「抖音 APP」 |
+| 原文URL | ✅ | 抖音视频链接 |
+| case ID | — | 可为空 |
+| 标题 | — | 可为空 |
+
+下载完成后，脚本会**原地回写**原 JSON 文件，为每条匹配记录追加 `链接是否有效` 和 `媒体类型` 两个字段。

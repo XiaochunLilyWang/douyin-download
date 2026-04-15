@@ -130,6 +130,43 @@ def try_video(url: str, video_path: Path):
         return False, err
 
 
+def load_targets_from_json(input_path: str) -> list:
+    """从 JSON 文件加载抖音链接，返回与 Excel 路径相同结构的列表。"""
+    with open(input_path, encoding="utf-8") as f:
+        rows = json.load(f)
+    targets = []
+    for row in rows:
+        if row.get("来源渠道") != SOURCE_CHANNEL_VALUE:
+            continue
+        targets.append({
+            "case_id": row.get("case ID") or None,
+            "url":     str(row.get("原文URL") or "").strip(),
+            "title":   str(row.get("标题") or "").strip(),
+        })
+    return targets
+
+
+def writeback_json(input_path: str, results: list) -> None:
+    """将下载结果回写到原 JSON：补充「链接是否有效」和「媒体类型」字段。"""
+    with open(input_path, encoding="utf-8") as f:
+        rows = json.load(f)
+
+    url_map = {r["url"]: r for r in results if r.get("url")}
+    updated = 0
+    for row in rows:
+        url = str(row.get("原文URL") or "").strip()
+        if url not in url_map:
+            continue
+        r = url_map[url]
+        row["链接是否有效"] = "否" if r["type"] == "无效" else "是"
+        row["媒体类型"]     = "" if r["type"] == "无效" else r["type"]
+        updated += 1
+
+    with open(input_path, "w", encoding="utf-8") as f:
+        json.dump(rows, f, ensure_ascii=False, indent=2)
+    print(f"\n原 JSON 已同步：更新 {updated} 行（链接是否有效 + 媒体类型）→ {input_path}")
+
+
 def writeback_excel(input_path: str, results: list) -> None:
     """
     将下载结果回写到原 Excel：
@@ -187,29 +224,33 @@ def run(input_path: str, output_dir: str | None = None) -> None:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ——— 读取 Excel ———
-    wb = openpyxl.load_workbook(str(input_path))
-    ws = wb.active
-    headers = [cell.value for cell in ws[1]]
-    col_idx = {name: i for i, name in enumerate(headers)}
+    # ——— 读取输入文件（Excel 或 JSON）———
+    suffix = input_path.suffix.lower()
+    if suffix == ".json":
+        targets = load_targets_from_json(str(input_path))
+    else:
+        wb = openpyxl.load_workbook(str(input_path))
+        ws = wb.active
+        headers = [cell.value for cell in ws[1]]
+        col_idx = {name: i for i, name in enumerate(headers)}
 
-    url_col = col_idx.get("原文URL")
-    channel_col = col_idx.get("来源渠道")
-    title_col = col_idx.get("标题")
-    case_id_col = col_idx.get("case ID")
+        url_col     = col_idx.get("原文URL")
+        channel_col = col_idx.get("来源渠道")
+        title_col   = col_idx.get("标题")
+        case_id_col = col_idx.get("case ID")
 
-    if url_col is None or channel_col is None:
-        print("ERROR: 找不到「原文URL」或「来源渠道」列，请检查表头。")
-        sys.exit(1)
+        if url_col is None or channel_col is None:
+            print("ERROR: 找不到「原文URL」或「来源渠道」列，请检查表头。")
+            sys.exit(1)
 
-    targets = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[channel_col] == SOURCE_CHANNEL_VALUE:
-            targets.append({
-                "case_id": row[case_id_col] if case_id_col is not None else None,
-                "url": str(row[url_col] or "").strip(),
-                "title": str(row[title_col] or "").strip() if title_col is not None else "",
-            })
+        targets = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[channel_col] == SOURCE_CHANNEL_VALUE:
+                targets.append({
+                    "case_id": row[case_id_col] if case_id_col is not None else None,
+                    "url":     str(row[url_col] or "").strip(),
+                    "title":   str(row[title_col] or "").strip() if title_col is not None else "",
+                })
 
     total = len(targets)
     print(f"找到 {total} 条「{SOURCE_CHANNEL_VALUE}」链接")
@@ -284,8 +325,11 @@ def run(input_path: str, output_dir: str | None = None) -> None:
         if i < total:
             time.sleep(REQUEST_DELAY)
 
-    # ——— 回写原 Excel：链接是否有效 + 媒体类型 ———
-    writeback_excel(str(input_path), results)
+    # ——— 回写原文件：链接是否有效 + 媒体类型 ———
+    if suffix == ".json":
+        writeback_json(str(input_path), results)
+    else:
+        writeback_excel(str(input_path), results)
 
     # ——— 写出结果 Excel ———
     out_xlsx = output_dir / "download_results.xlsx"
